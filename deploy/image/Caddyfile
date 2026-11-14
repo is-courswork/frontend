@@ -1,0 +1,26 @@
+{
+    admin off
+    auto_https off
+}
+
+:8080 {
+    root * /srv
+    encode zstd gzip
+    header X-Content-Type-Options nosniff
+    handle /healthz {
+        respond "ok" 200
+    }
+    handle /assets/* {
+        header Cache-Control "public, max-age=31536000, immutable"
+        file_server
+    }
+    handle /frontend-version.json {
+        header Cache-Control no-store
+        file_server
+    }
+    handle {
+        try_files {path} /index.html
+        header Cache-Control no-cache
+        file_server
+    }
+}
