@@ -26,7 +26,7 @@
     event.preventDefault()
     if (busy) return
     nameError = !name.trim()
-      ? 'Введите имя, не из одних пробелов'
+      ? 'Укажите имя прогона'
       : name.length > 120
         ? 'Максимум 120 символов'
         : ''
@@ -62,7 +62,6 @@
         aria-label="Закрыть"><X size={18} /></button
       >
     </div>
-    <p class="dialog-intro">Имя и описание можно изменить позже.</p>
     {#if error}<p class="error-banner" role="alert">{error}</p>{/if}
     <div class="form-field">
       <label for="run-name">Имя прогона</label>
@@ -85,9 +84,7 @@
       </div>
     </div>
     <div class="form-field">
-      <label for="run-description"
-        >Описание <span class="optional">· необязательно</span></label
-      >
+      <label for="run-description">Описание</label>
       <textarea
         id="run-description"
         bind:value={description}

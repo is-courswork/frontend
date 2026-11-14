@@ -49,6 +49,12 @@ test('open a run, edit its description without changing status, then delete', as
 }) => {
   const writes = await mockApi(page)
   await page.goto('/')
+  await expect(page.locator('.run-sidebar')).toHaveCount(0)
+  await page.getByRole('link', { name: /Прогоны/ }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Выберите прогон' }),
+  ).toBeVisible()
+  await expect(page.locator('.run-detail')).toHaveCount(0)
   await page.getByRole('link', { name: /Базовый сценарий/ }).click()
   await expect(
     page.getByRole('heading', { name: 'Базовый сценарий' }),
@@ -56,10 +62,10 @@ test('open a run, edit its description without changing status, then delete', as
   await page.reload()
   await expect(page.getByText('Исходная гипотеза')).toBeVisible()
   await page.getByRole('button', { name: 'Изменить', exact: true }).click()
-  await page.getByLabel('Описание', { exact: false }).fill('')
+  await page.getByRole('textbox', { name: 'Описание', exact: true }).fill('')
   await page.getByRole('button', { name: 'Сохранить', exact: true }).click()
   await expect(page.getByText('Описание пока не добавлено.')).toBeVisible()
-  await expect(page.locator('.badge')).toHaveText('Выполняется')
+  await expect(page.locator('.run-detail .badge')).toHaveText('Выполняется')
   expect(writes[0]).toEqual({
     method: 'PATCH',
     body: { name: original.name, description: null },
@@ -73,7 +79,7 @@ test('open a run, edit its description without changing status, then delete', as
     .getByRole('button', { name: 'Удалить прогон' })
     .click()
   await expect(
-    page.getByRole('heading', { name: 'Начнём с гипотезы' }),
+    page.getByRole('heading', { name: 'Ваш первый прогон' }),
   ).toBeVisible()
   expect(writes[1].method).toBe('DELETE')
 })
@@ -94,36 +100,42 @@ test('create with field limits and retry a failed load on mobile', async ({
     }
     return route.fallback()
   })
-  await page.goto('/')
+  await page.goto('/runs')
   await expect(page.getByRole('alert')).toContainText('Временная ошибка')
   await page.getByRole('button', { name: 'Попробовать снова' }).click()
-  await expect(page.locator('.run-row')).toHaveCount(1)
+  await expect(page.locator('.run-entry')).toHaveCount(1)
   await page.getByRole('button', { name: 'Новый прогон' }).click()
   await page.getByLabel('Имя прогона', { exact: true }).fill('   ')
   await page
     .getByRole('button', { name: 'Создать прогон', exact: true })
     .click()
-  await expect(
-    page.getByText('Введите имя, не из одних пробелов'),
-  ).toBeVisible()
+  await expect(page.getByText('Укажите имя прогона')).toBeVisible()
   expect(writes).toHaveLength(0)
   await expect(page.getByLabel('Имя прогона', { exact: true })).toHaveAttribute(
     'maxlength',
     '120',
   )
-  await expect(page.getByLabel('Описание', { exact: false })).toHaveAttribute(
-    'maxlength',
-    '2000',
-  )
+  await expect(
+    page.getByRole('textbox', { name: 'Описание', exact: true }),
+  ).toHaveAttribute('maxlength', '2000')
   const name = 'н'.repeat(120),
     description = 'д'.repeat(2000)
   await page.getByLabel('Имя прогона', { exact: true }).fill(name)
-  await page.getByLabel('Описание', { exact: false }).fill(description)
+  await page
+    .getByRole('textbox', { name: 'Описание', exact: true })
+    .fill(description)
   await page
     .getByRole('button', { name: 'Создать прогон', exact: true })
     .click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   expect(writes[0]).toEqual({ method: 'POST', body: { name, description } })
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
+  await page.getByRole('link', { name: 'Все прогоны' }).click()
+  await expect(page.locator('.run-entry')).toHaveCount(1)
+  await expect(page.locator('.run-content')).toBeHidden()
+  await page.locator('.run-entry').click()
+  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible()
+  await expect(page.locator('.run-sidebar')).toBeHidden()
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
