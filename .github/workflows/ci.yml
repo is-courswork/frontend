@@ -134,6 +134,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Configure SSH
+        id: ssh
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
@@ -141,44 +142,18 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          cat > ~/.ssh/config <<'SSH'
-          Host *
-            BatchMode yes
-            ConnectTimeout 15
-            ServerAliveInterval 15
-            ServerAliveCountMax 3
-            KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
-          SSH
-          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts ~/.ssh/config
-      - uses: docker/setup-docker-action@v5
-        with:
-          version: v29.1.3
-          daemon-config: |
-            {"features": {"containerd-snapshotter": true}}
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Transfer published image over SSH
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
-          FRONTEND_IMAGE: ghcr.io/is-courswork/frontend@${{ needs.image.outputs.digest }}
-        run: |
-          docker pull "$FRONTEND_IMAGE"
-          image_id=$(docker image inspect --format '{{.Id}}' "$FRONTEND_IMAGE")
-          [[ "$image_id" == "${FRONTEND_IMAGE##*@}" ]]
-          docker image save "$FRONTEND_IMAGE" | gzip -1 | ssh "$DEPLOY_USER@$DEPLOY_HOST" \
-            env DOCKER_HOST=unix:///run/airlines-docker/docker.sock docker image load
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
       - name: Deploy published image
         env:
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER }}
           FRONTEND_IMAGE: ghcr.io/is-courswork/frontend@${{ needs.image.outputs.digest }}
           COMMIT: ${{ github.sha }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
         run: |
+          printf '%s' "$REGISTRY_TOKEN" | ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            env "DOCKER_CONFIG=/opt/airlines/frontend/registry/$COMMIT" docker login ghcr.io --username "$REGISTRY_USER" --password-stdin
           tar -czf release.tar.gz -C deploy compose.yaml
           scp -o BatchMode=yes release.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/opt/airlines/incoming/frontend-$COMMIT.tar.gz"
           ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
@@ -197,6 +172,13 @@ jobs:
           for path in / /runs /api/core/run/all; do
             curl --fail --silent --show-error --max-time 20 "https://airlines.arhr.tech$path" > /dev/null
           done
+      - name: Remove temporary registry credentials
+        if: ${{ always() && steps.ssh.outcome == 'success' }}
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          COMMIT: ${{ github.sha }}
+        run: ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" env "DOCKER_CONFIG=/opt/airlines/frontend/registry/$COMMIT" docker logout ghcr.io
       - name: Remove temporary SSH credentials
         if: ${{ always() }}
-        run: rm -f ~/.ssh/id_ed25519 ~/.ssh/known_hosts ~/.ssh/config
+        run: rm -f ~/.ssh/id_ed25519 ~/.ssh/known_hosts
